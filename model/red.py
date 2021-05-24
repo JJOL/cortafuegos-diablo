@@ -15,7 +15,7 @@ n_val = 11915
 
 dataSet = loadtxt('AppDDoS.csv', delimiter=',');
 random.shuffle(dataSet)
-X = dataSet[:, 0:38]
+X = dataSet[:, 0:39]
 singleY = dataSet[:,43]
 
 

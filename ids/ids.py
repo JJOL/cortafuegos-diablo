@@ -1,6 +1,7 @@
 from flask import Flask, request
 import keras
 import numpy as np
+from pickle import load as pickle_load
 
 app = Flask(__name__)
 
@@ -10,11 +11,12 @@ INPUT_FIELDS = [ "total_fpackets", "total_fvolume", "total_bpackets",
 "std_fiat", "min_biat", "mean_biat", "max_biat", "std_biat", "duration", "min_active",
 "mean_active", "max_active", "std_active", "min_idle", "mean_idle", "max_idle",
 "std_idle", "sflow_fpackets", "sflow_fbytes", "sflow_bpackets", "sflow_bbytes",
-"fpsh_cnt", "bpsh_cnt", "furg_cnt", "burg_cnt", "total_fhlen", "total_bhlen",
-"dscp", "flrstTime", "flast", "blast"]
+"fpsh_cnt", "bpsh_cnt", "furg_cnt", "burg_cnt", "total_fhlen", "total_bhlen"]
 
 # Load model before hand
-model = keras.models.load_model("./model.h5")
+model = keras.models.load_model("../model/model.h5")
+with open("../model/scaler.pkl", "rb") as pickle_file:
+    scaler = pickle_load(pickle_file)
 
 @app.route("/", methods=["POST"])
 def ids():
@@ -29,8 +31,9 @@ def ids():
             else:
                 inpt.append(data[field])
         if not errors:
-            array = np.array(inpt)
-            predictions = model.predict(array[np.newaxis])
+            array_raw = np.array([inpt])
+            array = scaler.transform(array_raw)
+            predictions = model.predict(array)
             return {"prediction": predictions.tolist()}, 200
     errors.append({"request": "Request is not in json format"})
     return errors, 400
