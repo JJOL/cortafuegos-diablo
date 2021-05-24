@@ -31,6 +31,6 @@ def ids():
         if not errors:
             array = np.array(inpt)
             predictions = model.predict(array[np.newaxis])
-            return {"prediction": predictions}, 200
+            return {"prediction": predictions.tolist()}, 200
     errors.append({"request": "Request is not in json format"})
     return errors, 400
