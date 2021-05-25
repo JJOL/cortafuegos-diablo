@@ -5,7 +5,7 @@
 "total_bvolume": 400,
 "min_fpktl": 52,
 "mean_fpktl": 278,
-"max_fptkl": 542,
+"max_fpktl": 542,
 "std_fpktl": 247,
 "min_bpktl": 40,
 "mean_bpktl": 57,
