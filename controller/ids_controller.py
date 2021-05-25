@@ -365,9 +365,8 @@ def packet_handler(event):
     ippacket = packet.find(ipv4)
     tcppacket = packet.find(tcp)
 
-    log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
-
     if ippacket and tcppacket:
+        log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
         fkey = FlowKey(ippacket, tcppacket)
         if fkey not in flows_map:
             f = FlowData(ippacket, tcppacket)
