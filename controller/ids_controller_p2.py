@@ -368,7 +368,7 @@ def packet_handler(event):
     
     if ippacket and tcppacket:
         log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
-        fkey = FlowKey(ippacket, tcppacket)
+        fkey = FlowKey(ippacket, tcppacket, 'tcp')
         if fkey not in flows_map:
             f = FlowData(ippacket, tcppacket)
             flows_map[fkey] = f
