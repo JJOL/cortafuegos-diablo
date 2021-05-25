@@ -318,8 +318,8 @@ class FlowData:
     def toJsonDict(self):
         data = {}
         for fname in FEATURE_NAMES:
+            lowercase_fname = fname.lower()
             if fname in DISTRIBUTION_FEATURES:
-                lowercase_fname = fname.lower()
                 dfeat = self.feat[fname]
                 data['min_{}'.format(lowercase_fname)] = dfeat.min
                 data['mean_{}'.format(lowercase_fname)] = dfeat.mean
