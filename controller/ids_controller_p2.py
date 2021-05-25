@@ -7,6 +7,7 @@ Descripcion: Un script aplicacion POX que intercepta paquetes para calcular esta
 from Queue import Queue
 from math import sqrt
 import time
+import threading
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
@@ -383,27 +384,32 @@ def packet_handler(event):
             flows_map.pop(fkey, None)
             log.debug('Connection {} was closed!'.format(str(fkey)))
 
-def ids_job():
-    if not ids_queue.empty():
-        n = ids_queue.qsize()
-        while n > 0:
-            # Check if flow data as it is, is malicious
-            # classify(fdata)
-            n -= 1
-            fkey, fdata = ids_queue.get()
-            log.debug("Going to evaluate flow: {}...".format(str(fkey)))
-            log.debug('FlowData:')
-            log.debug(str(fdata))
+def ids_job(thread_name='ids_job'):
+    def th_print(s):
+        log.debug('{}:{}'.format(thread_name, s))
 
-            log.debug('Sending to API service...')
-            api_url = "http://{}:{}".format(API_SERVICE_IP, str(API_SERVICE_PORT))
-            resp = r.post(api_url, json=fdata)
+    while (True):
+        time.sleep(PERIODIC_JOB_SECONDS)
+        if not ids_queue.empty():
+            n = ids_queue.qsize()
+            while n > 0:
+                # Check if flow data as it is, is malicious
+                # classify(fdata)
+                n -= 1
+                fkey, fdata = ids_queue.get()
+                th_print("Going to evaluate flow: {}...".format(str(fkey)))
+                th_print('FlowData:')
+                th_print(str(fdata))
 
-            resp = resp.json()
-            attack_prob = float(resp['prediction'][0][0])
-            log.debug('Returned Attack p(x): {}'.format(str(attack_prob)))
-            if attack_prob > 0.5:
-                log.debug('WE ARE UNDER ATTACK!!!!!!')
+                th_print('Sending to API service...')
+                api_url = "http://{}:{}".format(API_SERVICE_IP, str(API_SERVICE_PORT))
+                resp = r.post(api_url, json=fdata)
+
+                resp = resp.json()
+                attack_prob = float(resp['prediction'][0][0])
+                th_print('Returned Attack p(x): {}'.format(str(attack_prob)))
+                if attack_prob > 0.5:
+                    th_print('WE ARE UNDER ATTACK!!!!!!')
 
 
 
@@ -421,4 +427,8 @@ def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
 
     core.openflow.addListenerByName("PacketIn", packet_handler)
     # Start Classifier Job
-    Timer(PERIODIC_JOB_SECONDS, ids_job, recurring=True)
+    
+    # POX RECOCO Threads are cooperative and if one blocks, all block
+    #Timer(PERIODIC_JOB_SECONDS, ids_job, recurring=True)
+    ids_eval_job = threading.Thread(target=ids_job, args=("ids_job",))
+    ids_eval_job.start()
