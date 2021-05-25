@@ -25,12 +25,12 @@ PERIODIC_JOB_SECONDS = 0
 ## Corrections to POX
 # POX IPv4 unpacking TOS is wrong. TOS is 6 bits and IPv4 stores the full byte
 # We remove the 2 extra bits that are ECN (2 bits) field
-def getIPv4DSCP(ippkt: ipv4):
+def getIPv4DSCP(ippkt):
     return ippkt.tos >> 2
 
 # POX IPv4 Header Length is units of 32-bit WORDS, we need to mulitply by 4 to get bytes
 # POX TCP  Header Length is already given in bytes, so need to multiply
-def getIPv4HLen(ippkt: ipv4):
+def getIPv4HLen(ippkt):
     return ippkt.hl * 4
 
 log = {}
