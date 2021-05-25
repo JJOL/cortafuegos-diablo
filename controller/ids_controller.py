@@ -15,18 +15,27 @@ import pox.openflow.libopenflow_01 as of
 from pox.lib.packet.ethernet import ethernet
 from pox.lib.packet.ipv4 import ipv4
 from pox.lib.packet.tcp import tcp
-from pox.lib.recoco.recoco import Timer
+from pox.lib.recoco import Timer
+
+import requests as r
+
+# Configurations parameters Default in launch function
+API_SERVICE_IP = ''
+API_SERVICE_PORT = 0
+PERIODIC_JOB_SECONDS = 0
 
 ## Corrections to POX
-
 # POX IPv4 unpacking TOS is wrong. TOS is 6 bits and IPv4 stores the full byte
 # We remove the 2 extra bits that are ECN (2 bits) field
 def getIPv4DSCP(ippkt: ipv4):
     return ippkt.tos >> 2
 
 # POX IPv4 Header Length is units of 32-bit WORDS, we need to mulitply by 4 to get bytes
+# POX TCP  Header Length is already given in bytes, so need to multiply
 def getIPv4HLen(ippkt: ipv4):
     return ippkt.hl * 4
+
+log = {}
 
 class TCPState:
     TCP_STATE_START = 0
@@ -135,39 +144,46 @@ class DistributionFeature():
             return 0
         return sqrt((sumsq - (sum * sum / count)) / (count - 1))
 
+total_flows_created = 0
+
 class FlowData:
     def __init__(self, ippacket: ipv4 = None, tcppacket: tcp = None):
-        if ippacket:
-            self.src_ip = ippacket.srcip
-            self.src_port = tcppacket.srcport
-            self.dst_ip = ippacket.dstip
-            self.dst_port = tcppacket.dstport
-            self.proto = 'tcp'
+        global total_flows_created
+        total_flows_created += 1
+        log.debug('Creating Flow {} Data for ip: {}'.format(total_flows_created, str(ippacket.srcip)))
 
-            self.feat: Dict[str, Union[ValueFeature, DistributionFeature]] = {}
-            self.initFeatures()
+        self.src_ip = ippacket.srcip
+        self.src_port = tcppacket.srcport
+        self.dst_ip = ippacket.dstip
+        self.dst_port = tcppacket.dstport
+        self.proto = 'tcp'
 
-            feat = self.feat
-            feat['DSCP'].set(getIPv4DSCP(ippacket))
-            feat['TOTAL_FPACKETS'].set(1)
-            length = ippacket.iplen
-            feat['TOTAL_FVOLUME'].set(length)
-            feat['FPKTL'].add(length)
-            feat['FIRSTTIME'].set(int(time.time()))
-            feat['FLAST'].set(feat['FIRSTTIME'].get())
-            feat['TOTAL_FHLEN'].set(getIPv4HLen(ippacket) + tcppacket.hdr_len)
-            self.activeStart = feat['FIRSTTIME'].get()
+        self.pdir = P_FORWARD
+        self.valid = False
+        self.hasData = False
+        self.isBidir = False
 
-            self.cstate = TCPState()
-            self.sstate = TCPState()
-            if self.proto == 'tcp':
-                self.cstate.state = TCPState.TCP_STATE_START
-                self.sstate.state = TCPState.TCP_STATE_START
+        self.feat: Dict[str, Union[ValueFeature, DistributionFeature]] = {}
+        self.initFeatures()
 
-            self.hasData = False
-            self.pdir = P_FORWARD
-            self.valid = False
-            self.updateStatus(ippacket, tcppacket)
+        feat = self.feat
+        feat['DSCP'].set(getIPv4DSCP(ippacket))
+        feat['TOTAL_FPACKETS'].set(1)
+        length = ippacket.iplen
+        feat['TOTAL_FVOLUME'].set(length)
+        feat['FPKTL'].add(length)
+        feat['FIRSTTIME'].set(int(time.time()))
+        feat['FLAST'].set(feat['FIRSTTIME'].get())
+        feat['TOTAL_FHLEN'].set(getIPv4HLen(ippacket) + tcppacket.hdr_len)
+        self.activeStart = feat['FIRSTTIME'].get()
+
+        self.cstate = TCPState()
+        self.sstate = TCPState()
+        if self.proto == 'tcp':
+            self.cstate.state = TCPState.TCP_STATE_START
+            self.sstate.state = TCPState.TCP_STATE_START
+
+        self.updateStatus(ippacket, tcppacket)
 
     def initFeatures(self):
         for fname in FEATURE_NAMES:
@@ -191,7 +207,7 @@ class FlowData:
     
     def updateTCPState(self, tcppkt: tcp):
         self.cstate.tcpUpdate(tcppkt, P_FORWARD, self.pdir)
-        self.cstate.tcpUpdate(tcppkt, P_BACKWARD, self.pdir)
+        self.sstate.tcpUpdate(tcppkt, P_BACKWARD, self.pdir)
 
     def updateStatus(self, ippkt: ipv4, tcppkt: tcp = None):
         if self.proto == 'udp':
@@ -245,6 +261,8 @@ class FlowData:
         
 
         # Calculate Statistics
+        feat['DURATION'].set(last - feat['FIRSTTIME'].get())
+
         if self.pdir == P_FORWARD:
             # Forwards
             feat['FPKTL'].add(length)
@@ -300,28 +318,29 @@ class FlowData:
         data = {}
         for fname in FEATURE_NAMES:
             if fname in DISTRIBUTION_FEATURES:
+                lowercase_fname = fname.lower()
                 dfeat: DistributionFeature = self.feat[fname]
-                data['MIN_{}'.format(fname)] = dfeat.min
-                data['MEAN_{}'.format(fname)] = dfeat.mean
-                data['MAX_{}'.format(fname)] = dfeat.max
-                data['STD_{}'.format(fname)] = dfeat.std
+                data['min_{}'.format(lowercase_fname)] = dfeat.min
+                data['mean_{}'.format(lowercase_fname)] = dfeat.mean
+                data['max_{}'.format(lowercase_fname)] = dfeat.max
+                data['std_{}'.format(lowercase_fname)] = dfeat.std
             else:
-                data[fname] = self.feat[fname].get()
+                data[lowercase_fname] = self.feat[fname].get()
         
         return data
 
 
 class FlowKey:
-    def __init__(self, ippacket: ipv4, tcppacket: tcp):
+    def __init__(self, ippacket: ipv4, tcppacket: tcp, proto: str):
         ip1 = str(ippacket.srcip)
         port1 = tcppacket.srcport
         ip2 = str(ippacket.dstip)
         port2 = tcppacket.dstport
 
         if ip1 > ip2:
-            self.key = "{},{},{},{},tcp".format(ip1, port1, ip2, port2)
+            self.key = "{},{},{},{},{}".format(ip1, port1, ip2, port2, proto)
         else:
-            self.key = "{},{},{},{},tcp".format(ip2, port2, ip1, port1)
+            self.key = "{},{},{},{},{}".format(ip2, port2, ip1, port1, proto)
     
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, FlowKey):
@@ -341,9 +360,12 @@ ids_queue = Queue()
 flows_map: Dict[FlowKey, FlowData] = {}
 
 def packet_handler(event):
+    log.debug('Packet In Detected!')
     packet = event.parse()
     ippacket = packet.find(ipv4)
     tcppacket = packet.find(tcp)
+
+    log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
 
     if ippacket and tcppacket:
         fkey = FlowKey(ippacket, tcppacket)
@@ -359,21 +381,44 @@ def packet_handler(event):
         if f.isClosed():
             # Removing flow from table if connection is closed!
             flows_map.pop(fkey, None)
+            log.debug('Connection {} was closed!'.format(str(fkey)))
 
 def ids_job():
     if not ids_queue.empty():
         n = ids_queue.qsize()
         while n > 0:
-            n -= 1
-            fkey, fdata = ids_queue.get()
-            print("Going to check flow: {}...".format(str(fkey)))
-
             # Check if flow data as it is, is malicious
             # classify(fdata)
+            n -= 1
+            fkey, fdata = ids_queue.get()
+            log.debug("Going to evaluate flow: {}...".format(str(fkey)))
+            log.debug('FlowData:')
+            log.debug(str(fdata))
+
+            log.debug('Sending to API service...')
+            api_url = "http://{}:{}".format(API_SERVICE_IP, str(API_SERVICE_PORT))
+            resp = r.post(api_url, json=fdata)
+
+            resp = resp.json()
+            attack_prob = float(resp['prediction'][0][0])
+            log.debug('Returned Attack p(x): {}'.format(str(attack_prob)))
+            if attack_prob > 0.5:
+                log.debug('WE ARE UNDER ATTACK!!!!!!')
 
 
 
-def launch(ports=''):
+def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
+    global log
+    log = core.getLogger('ids_controller')
+    log.debug('Setting up ids_controller...') 
+
+    global API_SERVICE_IP
+    global API_SERVICE_PORT
+    global PERIODIC_JOB_SECONDS
+    API_SERVICE_IP = str(apiip)
+    API_SERVICE_PORT = int(apiport)
+    PERIODIC_JOB_SECONDS = int(jobseconds)
+
     core.openflow.addListenerByName("PacketIn", packet_handler)
     # Start Classifier Job
-    Timer(2, ids_job, recurring=True)
+    Timer(PERIODIC_JOB_SECONDS, ids_job, recurring=True)
