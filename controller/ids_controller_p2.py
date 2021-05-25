@@ -34,6 +34,8 @@ def getIPv4DSCP(ippkt):
 def getIPv4HLen(ippkt):
     return ippkt.hl * 4
 
+# Global Variables
+StopApp = False
 log = {}
 
 class TCPState:
@@ -389,6 +391,8 @@ def ids_job(thread_name='ids_job'):
         log.debug('{}:{}'.format(thread_name, s))
 
     while (True):
+        if StopApp:
+            break
         time.sleep(PERIODIC_JOB_SECONDS)
         if not ids_queue.empty():
             n = ids_queue.qsize()
@@ -411,7 +415,10 @@ def ids_job(thread_name='ids_job'):
                 if attack_prob > 0.5:
                     th_print('WE ARE UNDER ATTACK!!!!!!')
 
-
+def shutdown_handler(event):
+    log.debug('Shutting down...')
+    global StopApp
+    StopApp = True
 
 def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
     global log
@@ -426,6 +433,7 @@ def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
     PERIODIC_JOB_SECONDS = int(jobseconds)
 
     core.openflow.addListenerByName("PacketIn", packet_handler)
+    core.addListenerByName("GoingDownEvent", shutdown_handler)
     # Start Classifier Job
     
     # POX RECOCO Threads are cooperative and if one blocks, all block
