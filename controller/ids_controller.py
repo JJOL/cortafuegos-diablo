@@ -1,4 +1,9 @@
-from struct import pack
+"""
+Cortafuegos-Diable: POX Controller
+Author: Doritos Electronicos
+Descripcion: Un script aplicacion POX que intercepta paquetes para calcular estadisticas flowbag y enviarlas periodicamente a un API de clasificacion.
+"""
+
 from typing import Dict, Union
 
 from queue import Queue
@@ -12,16 +17,18 @@ from pox.lib.packet.ipv4 import ipv4
 from pox.lib.packet.tcp import tcp
 from pox.lib.recoco.recoco import Timer
 
+## Corrections to POX
+
 # POX IPv4 unpacking TOS is wrong. TOS is 6 bits and IPv4 stores the full byte
 # We remove the 2 extra bits that are ECN (2 bits) field
 def getIPv4DSCP(ippkt: ipv4):
     return ippkt.tos >> 2
 
-def getIPV4HLen(ippkt: ipv4):
+# POX IPv4 Header Length is units of 32-bit WORDS, we need to mulitply by 4 to get bytes
+def getIPv4HLen(ippkt: ipv4):
     return ippkt.hl * 4
 
 class TCPState:
-
     TCP_STATE_START = 0
     TCP_STATE_SYN = 1
     TCP_STATE_SYNACK = 2
@@ -148,7 +155,7 @@ class FlowData:
             feat['FPKTL'].add(length)
             feat['FIRSTTIME'].set(int(time.time()))
             feat['FLAST'].set(feat['FIRSTTIME'].get())
-            feat['TOTAL_FHLEN'].set(getIPV4HLen(ippacket) + tcppacket.hdr_len)
+            feat['TOTAL_FHLEN'].set(getIPv4HLen(ippacket) + tcppacket.hdr_len)
             self.activeStart = feat['FIRSTTIME'].get()
 
             self.cstate = TCPState()
@@ -195,7 +202,7 @@ class FlowData:
             if self.hasData and self.isBidir:
                 self.valid = True
         elif self.proto == 'tcp':
-            headers_len = getIPV4HLen(ippkt) + tcppkt.hdr_len
+            headers_len = getIPv4HLen(ippkt) + tcppkt.hdr_len
             if not self.valid:
                 if self.cstate.state == TCPState.TCP_STATE_ESTABLISHED:
                     if ippkt.iplen > headers_len:
@@ -217,7 +224,7 @@ class FlowData:
             return
         
         length = ippkt.iplen
-        hlen = getIPV4HLen(ippkt) + tcppkt.hdr_len # IP Header Len + TCP Header Len
+        hlen = getIPv4HLen(ippkt) + tcppkt.hdr_len # IP Header Len + TCP Header Len
 
         if src_ip == self.src_ip:
             self.pdir = P_FORWARD
