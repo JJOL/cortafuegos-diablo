@@ -39,6 +39,10 @@ def getIPv4HLen(ippkt: ipv4):
 # Global Variables
 StopApp = False
 log = {}
+ATTACK_P_THRESH = 0.1
+
+total_attack_counts = 0
+total_flows_created = 0
 
 class TCPState:
     TCP_STATE_START = 0
@@ -147,13 +151,13 @@ class DistributionFeature():
             return 0
         return sqrt((sumsq - (sum * sum / count)) / (count - 1))
 
-total_flows_created = 0
+
 
 class FlowData:
     def __init__(self, ippacket: ipv4 = None, tcppacket: tcp = None):
         global total_flows_created
         total_flows_created += 1
-        #log.debug('Creating Flow {} Data for ip: {}'.format(total_flows_created, str(ippacket.srcip)))
+        log.debug('Creating Flow #{}, Data for src ip: {}'.format(total_flows_created, str(ippacket.srcip)))
 
         self.src_ip = ippacket.srcip
         self.src_port = tcppacket.srcport
@@ -239,7 +243,7 @@ class FlowData:
             # Timetout ADD IDLE
             return
         if now < last:
-            print('FATAL: Packet at less time than previous ones')
+            log.error('FATAL: Packet at less time than previous ones')
             return
         
         length = ippkt.iplen
@@ -363,13 +367,13 @@ ids_queue = Queue()
 flows_map: Dict[FlowKey, FlowData] = {}
 
 def packet_handler(event):
-    # log.debug('Packet In Detected!')
+    log.info('Packet In Detected!')
     packet = event.parse()
     ippacket = packet.find(ipv4)
     tcppacket = packet.find(tcp)
 
     if ippacket and tcppacket:
-        # log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
+        log.debug('From {} -> {}'.format(str(ippacket.srcip), str(ippacket.dstip)))
         fkey = FlowKey(ippacket, tcppacket, 'tcp')
         if fkey not in flows_map:
             f = FlowData(ippacket, tcppacket)
@@ -383,9 +387,12 @@ def packet_handler(event):
         if f.isClosed():
             # Removing flow from table if connection is closed!
             flows_map.pop(fkey, None)
-            log.info('Connection {} was closed!'.format(str(fkey)))
+            log.debug('Connection {} was closed!'.format(str(fkey)))
 
 def ids_job(thread_name='ids_job'):
+
+    global total_attack_counts
+
     def th_print(s):
         log.debug('{}:{}'.format(thread_name, s))
 
@@ -400,31 +407,31 @@ def ids_job(thread_name='ids_job'):
                 # classify(fdata)
                 n -= 1
                 fkey, fdata = ids_queue.get()
-                # th_print("Going to evaluate flow: {}...".format(str(fkey)))
-                # th_print('FlowData:')
-                # th_print(str(fdata))
+                th_print("Going to evaluate flow: {}...".format(str(fkey)))
+                th_print('FlowData:')
+                th_print(str(fdata))
 
-                # th_print('Sending to API service...')
+                th_print('Sending to API service...')
                 api_url = "http://{}:{}".format(API_SERVICE_IP, str(API_SERVICE_PORT))
                 resp = r.post(api_url, json=fdata)
 
                 resp = resp.json()
                 attack_prob = float(resp['prediction'][0][0])
                 attack_prob_str = str(attack_prob)
-                # th_print('Returned Attack p(x): {}'.format(attack_prob_str))
                 log.info('{}: Returned Attack p(x): {}'.format(thread_name, attack_prob_str))
-                if attack_prob > 0.5:
-                    log.warn('WE ARE UNDER ATTACK!!!!!!')
+                if attack_prob > ATTACK_P_THRESH:
+                    total_attack_counts += 1
+                    log.warn('WE ARE UNDER ATTACK!!!!!! Total attack counts registed: {}'.format(str(total_attack_counts)))
 
 def shutdown_handler(event):
-    log.debug('Shutting down...')
+    log.info('Shutting down...')
     global StopApp
     StopApp = True
 
 def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
     global log
     log = core.getLogger('ids_controller')
-    log.debug('Setting up ids_controller...') 
+    log.info('Setting up ids_controller...') 
 
     global API_SERVICE_IP
     global API_SERVICE_PORT
@@ -441,3 +448,4 @@ def launch(apiip='127.0.0.1', apiport=5000, jobseconds=3):
     #Timer(PERIODIC_JOB_SECONDS, ids_job, recurring=True)
     ids_eval_job = threading.Thread(target=ids_job, args=("ids_job",))
     ids_eval_job.start()
+    log.info('Everything setted up!')
