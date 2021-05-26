@@ -6,7 +6,8 @@ una probabilidad de que el flow represente tráfico de ataque SR-DDoS
 """
 
 from flask import Flask, request
-import keras
+import tensorflow as tf
+from tensorflow import keras
 import numpy as np
 from pickle import load as pickle_load
 
@@ -21,7 +22,7 @@ INPUT_FIELDS = [ "total_fpackets", "total_fvolume", "total_bpackets",
 "fpsh_cnt", "bpsh_cnt", "furg_cnt", "burg_cnt", "total_fhlen", "total_bhlen"]
 
 # Load model and input scaler before hand
-model = keras.models.load_model("../model/model.h5")
+model = tf.keras.models.load_model("../model/model.h5")
 with open("../model/scaler.pkl", "rb") as pickle_file:
     scaler = pickle_load(pickle_file)
 

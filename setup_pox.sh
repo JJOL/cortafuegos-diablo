@@ -7,4 +7,4 @@ pip2 install -r controller/requirements.txt
 
 cd $POX_DIR
 # change --apiip=<value> to IP of host machine running API Server
-python2 pox.py log.level --INFO forwarding.hub --reactive=False ids_controller --apiip=192.168.1.68
+python pox.py log.level --INFO forwarding.hub --reactive=False ids_controller --apiip=192.168.1.68
